@@ -27,7 +27,7 @@ Find the IP address of your Kazeta machine with `ip addr`, then on your client, 
 **NOTE: this has only been tested on Steam Deck so far. YMMV on other handhelds.**
 
 Simply run the installer with the following command:
-`curl -L https://raw.githubusercontent.com/the-outcaster/kazeta-hacks/main/install-volume-control.sh | sh`
+`curl -L https://raw.githubusercontent.com/the-outcaster/kazeta-hacks/main/install-volume-control.sh | sudo sh`
 
 It will:
 1. Create a script in `/usr/local/bin/`
