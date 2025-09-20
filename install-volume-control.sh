@@ -9,22 +9,16 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-echo "--- Volume Control Installer ---"
+echo "--- Volume Control Installer (Corrected Version) ---"
 
 # --- Define File Paths and Content ---
 SCRIPT_PATH="/usr/local/bin/kazeta-volume-control.sh"
 SERVICE_PATH="/etc/systemd/system/kazeta-volume-control.service"
 
 # Use a 'here document' (cat <<'EOF') to write the script content.
-# The 'EOF' ensures that variables inside the block are not expanded.
-echo "1. Creating the volume control script at $SCRIPT_PATH..."
+echo "1. Creating the final volume control script at $SCRIPT_PATH..."
 cat > "$SCRIPT_PATH" << 'EOF'
 #!/bin/bash
-
-# --- Wait for udev database to be ready before proceeding ---
-while [ ! -d "/run/udev/data/" ]; do
-    sleep 1
-done
 
 # --- USER CONFIGURATION ---
 DEVICE_NAME_PRIMARY="InputPlumber Keyboard"
@@ -32,7 +26,7 @@ DEVICE_ID_PATH_FALLBACK="platform-i8042-serio-0"
 USER_UID="1000"
 # --- END CONFIGURATION ---
 
-# --- Auto-Detection Logic ---
+# --- Auto-Detection & Retry Logic ---
 find_device_path() {
     local device_path=""
     # 1. Check for primary device by NAME
@@ -49,17 +43,34 @@ find_device_path() {
     fi
 }
 
-INPUT_DEVICE_PATH=$(find_device_path)
+echo "Searching for volume control device..."
+INPUT_DEVICE_PATH=""
+MAX_RETRIES=15
+RETRY_COUNT=0
+
+while [ -z "$INPUT_DEVICE_PATH" ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    INPUT_DEVICE_PATH=$(find_device_path)
+    if [ -z "$INPUT_DEVICE_PATH" ]; then
+        # Log to system journal if running as a service
+        if systemctl is-active --quiet kazeta-volume-control.service; then
+            echo "Device not found, waiting... ($((RETRY_COUNT+1))/$MAX_RETRIES)" | systemd-cat -p info
+        else
+            echo "Device not found, waiting... ($((RETRY_COUNT+1))/$MAX_RETRIES)"
+        fi
+        sleep 1
+        RETRY_COUNT=$((RETRY_COUNT+1))
+    fi
+done
 
 if [ -z "$INPUT_DEVICE_PATH" ]; then
-    # Log to system journal if running as a service
     if systemctl is-active --quiet kazeta-volume-control.service; then
-        echo "ERROR: Could not find a suitable input device. Exiting." | systemd-cat -p err
+        echo "ERROR: Could not find a suitable input device after $MAX_RETRIES seconds. Exiting." | systemd-cat -p err
     else
-        echo "ERROR: Could not find a suitable input device. Exiting."
+        echo "ERROR: Could not find a suitable input device after $MAX_RETRIES seconds. Exiting."
     fi
     exit 1
 fi
+
 # --- End Auto-Detection ---
 
 stdbuf -o0 od -An -t u2 -j 16 -w8 "$INPUT_DEVICE_PATH" | while read -r type code value junk; do
@@ -98,17 +109,14 @@ WantedBy=multi-user.target
 EOF
 
 # --- Final Steps ---
-# Mark the script as executable
 echo "3. Setting script permissions..."
 chmod +x "$SCRIPT_PATH"
 
-# Reload systemd, enable, and start the service
-echo "4. Reloading systemd and starting the service..."
+echo "4. Reloading systemd and restarting the service..."
 systemctl daemon-reload
-# --now enables and starts the service in one command
 systemctl enable --now "$SERVICE_PATH"
 
 echo ""
 echo "Installation complete!"
-echo "The volume control service is now running and will start automatically on boot."
-echo "You can check its status with: systemctl status kazeta-volume-control.service"
+echo "The corrected volume control service is now running."
+echo "Please reboot to confirm everything works correctly from a cold start."
